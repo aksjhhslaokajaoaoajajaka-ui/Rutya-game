@@ -1,108 +1,191 @@
 <!DOCTYPE html>
 <html lang="ru"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
-<title>Зомби</title>
-<style>html,body{margin:0;height:100%;background:#111;overflow:hidden;touch-action:none}canvas{display:block}</style>
-</head><body><canvas id="c"></canvas>
+<title>Выживалка</title>
+<style>
+html,body{margin:0;height:100%;background:#111;overflow:hidden;touch-action:none;user-select:none;-webkit-user-select:none;font-family:sans-serif}
+canvas{display:block}
+.b{position:fixed;border:0;border-radius:50%;color:#fff;font-weight:bold;opacity:.85}
+#atk{right:20px;bottom:30px;width:96px;height:96px;background:#c33;font-size:18px}
+#bag{right:14px;top:12px;width:58px;height:58px;background:#357;font-size:12px}
+#menu{position:fixed;inset:0;background:#000d;color:#fff;overflow:auto;padding:14px;display:none}
+#menu h3{margin:12px 0 6px}
+#menu button{display:block;width:100%;margin:6px 0;padding:10px;font-size:15px;border-radius:8px;border:0;background:#2d6;color:#000;text-align:left}
+#menu button:disabled{background:#444;color:#999}
+#menu #cl{position:sticky;bottom:0;background:#c33;color:#fff;text-align:center}
+</style></head><body><canvas id="c"></canvas>
+<button class="b" id="atk">УДАР</button><button class="b" id="bag">Сумка</button>
+<div id="menu"></div>
 <script>
-const c=document.getElementById('c'),x=c.getContext('2d');
+const c=document.getElementById('c'),x=c.getContext('2d'),M=document.getElementById('menu'),WS=4000,C=WS/2;
 let W,H;function rs(){W=c.width=innerWidth;H=c.height=innerHeight}rs();addEventListener('resize',rs);
-let p,zs,bs,score,t,over,joy={on:false,id:null,sx:0,sy:0,dx:0,dy:0};
-function init(){p={x:0,y:0,hp:100,cd:0,a:0};zs=[];bs=[];score=0;t=0;over=false}
-init();
+const RES={wood:'Дерево',stone:'Камень',iron:'Железо',leather:'Кожа'};
+const NAMES=['Слизень','Крыса','Волк','Гоблин','Тролль','Огр','Дракон','Демон'];
+const REC=[
+ {n:'Деревянный меч (+4 урон)',c:{wood:5},k:'sword',v:4},
+ {n:'Каменный меч (+8 урон)',c:{wood:5,stone:8},k:'sword',v:8},
+ {n:'Железный меч (+14 урон)',c:{wood:6,iron:10},k:'sword',v:14},
+ {n:'Кожаная броня (-2 урона)',c:{leather:6,wood:4},k:'armor',v:2},
+ {n:'Железная броня (-5 урона)',c:{iron:10,leather:6},k:'armor',v:5},
+ {n:'Каменная кирка (+1 добыча, можно копать железо)',c:{wood:8,stone:6},k:'tool',v:1},
+ {n:'Железная кирка (+2 добыча)',c:{wood:8,iron:8},k:'tool',v:2}
+];
+let P=null;
+try{P=JSON.parse(localStorage.getItem('surv1'))}catch(e){}
+if(!P||!P.inv)P={x:C,y:C,hp:100,lv:1,xp:0,sword:0,armor:0,tool:0,inv:{wood:0,stone:0,iron:0,leather:0}};
+P.cd=0;
+const MX=()=>100+P.lv*20, DMG=()=>5+P.lv*2+P.sword;
+function save(){try{localStorage.setItem('surv1',JSON.stringify(P))}catch(e){}}
+setInterval(save,5000);
 
-c.addEventListener('pointerdown',e=>{
-  if(over){if(t>60)init();return}
-  if(!joy.on){joy={on:true,id:e.pointerId,sx:e.clientX,sy:e.clientY,dx:0,dy:0}}
-});
+const R=(a,b)=>a+Math.random()*(b-a);
+let nodes=[],ms=[],tx=[],msg='',msgT=0,tick=0,atk=false,joy={on:false,id:null,sx:0,sy:0,dx:0,dy:0};
+function place(t,n,minD){for(let i=0;i<n;i++){let X,Y;do{X=R(60,WS-60);Y=R(60,WS-60)}while(Math.hypot(X-C,Y-C)<minD);nodes.push({x:X,y:Y,t,hp:4,rt:0})}}
+place('wood',380,120);place('stone',220,140);place('iron',110,500);
+function spawnM(){
+  let X,Y,d;do{X=R(60,WS-60);Y=R(60,WS-60);d=Math.hypot(X-C,Y-C)}while(d<260);
+  const lv=Math.min(8,1+Math.floor(d/260));
+  ms.push({x:X,y:Y,hx:X,hy:Y,tx:X,ty:Y,lv,hp:20+lv*18,mh:20+lv*18,dm:3+lv*2,sp:0.8+lv*0.07,sz:11+lv*2,cd:0});
+}
+for(let i=0;i<70;i++)spawnM();
+function txt(X,Y,s,col){tx.push({x:X,y:Y,s,col,l:45})}
+
+// управление
+c.addEventListener('pointerdown',e=>{if(!joy.on)joy={on:true,id:e.pointerId,sx:e.clientX,sy:e.clientY,dx:0,dy:0}});
 c.addEventListener('pointermove',e=>{
-  if(joy.on&&e.pointerId===joy.id){
-    let dx=e.clientX-joy.sx,dy=e.clientY-joy.sy,d=Math.hypot(dx,dy),m=60;
-    if(d>m){dx=dx/d*m;dy=dy/d*m}
-    joy.dx=dx/m;joy.dy=dy/m;
-  }
-});
+  if(joy.on&&e.pointerId===joy.id){let dx=e.clientX-joy.sx,dy=e.clientY-joy.sy,d=Math.hypot(dx,dy),m=60;
+    if(d>m){dx=dx/d*m;dy=dy/d*m}joy.dx=dx/m;joy.dy=dy/m}});
 const up=e=>{if(e.pointerId===joy.id)joy={on:false,id:null,sx:0,sy:0,dx:0,dy:0}};
 c.addEventListener('pointerup',up);c.addEventListener('pointercancel',up);
+const A=document.getElementById('atk');
+A.addEventListener('pointerdown',e=>{atk=true;e.preventDefault()});
+['pointerup','pointercancel','pointerleave'].forEach(n=>A.addEventListener(n,()=>atk=false));
+document.getElementById('bag').onclick=()=>{menu();M.style.display='block';atk=false};
+addEventListener('contextmenu',e=>e.preventDefault());
+
+function menu(){
+  let h='<h2>Сумка</h2><div>Уровень '+P.lv+' · урон '+DMG()+' · броня '+P.armor+'</div><h3>Ресурсы</h3>';
+  for(const k in RES)h+='<div>'+RES[k]+': '+P.inv[k]+'</div>';
+  h+='<h3>Крафт</h3>';
+  REC.forEach((r,i)=>{
+    const have=P[r.k]>=r.v;let ok=!have,cs=[];
+    for(const k in r.c){cs.push(RES[k]+' '+r.c[k]);if(P.inv[k]<r.c[k])ok=false}
+    h+='<button '+(ok?'':'disabled')+' onclick="craft('+i+')">'+r.n+(have?' ✔':'')+'<br><small>'+cs.join(', ')+'</small></button>';
+  });
+  h+='<button id="cl" onclick="M.style.display=\'none\'">Закрыть</button>';
+  M.innerHTML=h;
+}
+function craft(i){
+  const r=REC[i];if(P[r.k]>=r.v)return;
+  for(const k in r.c)if(P.inv[k]<r.c[k])return;
+  for(const k in r.c)P.inv[k]-=r.c[k];
+  P[r.k]=r.v;save();menu();
+}
+
+function hit(){
+  P.cd=22;
+  let m=null,md=75;
+  for(const z of ms){const d=Math.hypot(z.x-P.x,z.y-P.y)-z.sz;if(d<md){md=d;m=z}}
+  if(m){
+    const d=DMG();m.hp-=d;txt(m.x,m.y-m.sz,'-'+d,'#ff0');
+    if(m.hp<=0){
+      P.xp+=12*m.lv;txt(m.x,m.y,'+'+12*m.lv+' опыт','#8cf');
+      if(Math.random()<0.7){const n=1+Math.floor(Math.random()*m.lv);P.inv.leather+=n;txt(m.x,m.y+14,'+'+n+' кожа','#fa6')}
+      ms.splice(ms.indexOf(m),1);
+      while(P.xp>=P.lv*40){P.xp-=P.lv*40;P.lv++;P.hp=MX();msg='Новый уровень: '+P.lv+'!';msgT=120}
+    }
+    return;
+  }
+  let n=null,nd=70;
+  for(const o of nodes){if(o.rt>0)continue;const d=Math.hypot(o.x-P.x,o.y-P.y);if(d<nd){nd=d;n=o}}
+  if(n){
+    if(n.t==='iron'&&P.tool<1){txt(n.x,n.y-20,'Нужна кирка','#f66');return}
+    const g=1+P.tool;P.inv[n.t]+=g;n.hp--;
+    txt(n.x,n.y-20,'+'+g+' '+RES[n.t],'#fff');
+    if(n.hp<=0){n.rt=1500;n.hp=4}
+  }
+}
 
 function update(){
-  t++;
-  if(over)return;
-  // движение игрока
-  p.x+=joy.dx*3.2;p.y+=joy.dy*3.2;
-  // появление зомби
-  if(t%Math.max(15,60-Math.floor(t/90))===0){
-    const a=Math.random()*6.283,r=Math.max(W,H)/2+60;
-    zs.push({x:p.x+Math.cos(a)*r,y:p.y+Math.sin(a)*r,hp:2,s:0.8+Math.random()*0.5+t/6000});
-  }
-  // зомби идут к игроку
-  for(const z of zs){
-    const a=Math.atan2(p.y-z.y,p.x-z.x);
-    z.x+=Math.cos(a)*z.s;z.y+=Math.sin(a)*z.s;
-    if(Math.hypot(p.x-z.x,p.y-z.y)<24)p.hp-=0.4;
-  }
-  // авто-стрельба по ближайшему зомби
-  p.cd--;
-  let n=null,nd=380;
-  for(const z of zs){const d=Math.hypot(z.x-p.x,z.y-p.y);if(d<nd){nd=d;n=z}}
-  if(n){
-    p.a=Math.atan2(n.y-p.y,n.x-p.x);
-    if(p.cd<=0){p.cd=14;bs.push({x:p.x,y:p.y,vx:Math.cos(p.a)*9,vy:Math.sin(p.a)*9,l:50})}
-  }
-  // пули
-  for(const b of bs){
-    b.x+=b.vx;b.y+=b.vy;b.l--;
-    for(const z of zs){
-      if(z.hp>0&&Math.hypot(b.x-z.x,b.y-z.y)<16){z.hp--;b.l=0;if(z.hp<=0)score++;break}
+  tick++;
+  P.x=Math.max(10,Math.min(WS-10,P.x+joy.dx*3.2));
+  P.y=Math.max(10,Math.min(WS-10,P.y+joy.dy*3.2));
+  if(P.hp<MX())P.hp=Math.min(MX(),P.hp+0.03);
+  P.cd--;
+  if(atk&&P.cd<=0)hit();
+  for(const o of nodes)if(o.rt>0)o.rt--;
+  for(const z of ms){
+    z.cd--;
+    const d=Math.hypot(P.x-z.x,P.y-z.y);
+    if(d<200){
+      const a=Math.atan2(P.y-z.y,P.x-z.x);
+      if(d>z.sz+10){z.x+=Math.cos(a)*z.sp;z.y+=Math.sin(a)*z.sp}
+      else if(z.cd<=0){const dm=Math.max(1,z.dm-P.armor);P.hp-=dm;z.cd=50;txt(P.x,P.y-20,'-'+dm,'#f44')}
+    }else{
+      if(Math.random()<0.01){z.tx=z.hx+R(-80,80);z.ty=z.hy+R(-80,80)}
+      const a=Math.atan2(z.ty-z.y,z.tx-z.x);
+      if(Math.hypot(z.tx-z.x,z.ty-z.y)>4){z.x+=Math.cos(a)*0.5;z.y+=Math.sin(a)*0.5}
     }
   }
-  bs=bs.filter(b=>b.l>0);
-  zs=zs.filter(z=>z.hp>0);
-  if(p.hp<=0){over=true;t=0}
+  if(tick%300===0&&ms.length<70)spawnM();
+  if(P.hp<=0){
+    P.x=C;P.y=C;P.hp=MX();
+    for(const k in P.inv)P.inv[k]=Math.floor(P.inv[k]/2);
+    msg='Ты погиб! Потеряна половина ресурсов';msgT=180;
+  }
+  for(const t of tx){t.l--;t.y-=0.5}
+  tx=tx.filter(t=>t.l>0);
+  if(msgT>0)msgT--;
 }
 
 function draw(){
-  x.fillStyle='#2a3a2a';x.fillRect(0,0,W,H);
-  const ox=W/2-p.x,oy=H/2-p.y;
-  // сетка земли
-  x.strokeStyle='#334533';x.lineWidth=1;x.beginPath();
-  for(let gx=(ox%80);gx<W;gx+=80){x.moveTo(gx,0);x.lineTo(gx,H)}
-  for(let gy=(oy%80);gy<H;gy+=80){x.moveTo(0,gy);x.lineTo(W,gy)}
+  const ox=W/2-P.x,oy=H/2-P.y;
+  x.fillStyle='#2f4a2a';x.fillRect(0,0,W,H);
+  x.strokeStyle='#0003';x.lineWidth=1;x.beginPath();
+  for(let gx=(ox%100);gx<W;gx+=100){x.moveTo(gx,0);x.lineTo(gx,H)}
+  for(let gy=(oy%100);gy<H;gy+=100){x.moveTo(0,gy);x.lineTo(W,gy)}
   x.stroke();
-  // зомби
-  for(const z of zs){
-    x.fillStyle='#6a9a3a';x.beginPath();x.arc(z.x+ox,z.y+oy,14,0,6.283);x.fill();
-    x.fillStyle='#c33';x.fillRect(z.x+ox-8,z.y+oy-6,4,4);x.fillRect(z.x+ox+4,z.y+oy-6,4,4);
+  x.textAlign='center';x.font='14px sans-serif';
+  for(let k=1;k<=8;k++){
+    x.strokeStyle='rgba(255,255,255,.15)';x.lineWidth=2;
+    x.beginPath();x.arc(C+ox,C+oy,k*260,0,6.283);x.stroke();
+    x.fillStyle='rgba(255,255,255,.35)';x.fillText('зона '+(k+1<9?k+1:8)+' ур.',C+ox,C+oy-k*260-6);
   }
-  // пули
-  x.fillStyle='#ff0';
-  for(const b of bs){x.beginPath();x.arc(b.x+ox,b.y+oy,3,0,6.283);x.fill()}
-  // игрок
-  x.save();x.translate(W/2,H/2);x.rotate(p.a);
-  x.fillStyle='#555';x.fillRect(8,-3,20,6);
-  x.fillStyle='#3a8be0';x.beginPath();x.arc(0,0,14,0,6.283);x.fill();
-  x.restore();
-  // джойстик
+  x.strokeStyle='#f55';x.lineWidth=4;x.strokeRect(ox,oy,WS,WS);
+  for(const o of nodes){
+    if(o.rt>0)continue;
+    const sx=o.x+ox,sy=o.y+oy;if(sx<-30||sx>W+30||sy<-30||sy>H+30)continue;
+    if(o.t==='wood'){x.fillStyle='#5a3a1a';x.fillRect(sx-3,sy,6,12);x.fillStyle='#1f7a2a';x.beginPath();x.arc(sx,sy-4,14,0,6.283);x.fill()}
+    else if(o.t==='stone'){x.fillStyle='#888';x.beginPath();x.arc(sx,sy,12,0,6.283);x.fill()}
+    else{x.fillStyle='#667';x.beginPath();x.arc(sx,sy,12,0,6.283);x.fill();x.fillStyle='#7cf';x.fillRect(sx-6,sy-4,4,4);x.fillRect(sx+2,sy+1,4,4)}
+  }
+  for(const z of ms){
+    const sx=z.x+ox,sy=z.y+oy;if(sx<-40||sx>W+40||sy<-40||sy>H+40)continue;
+    x.fillStyle='hsl('+(130-z.lv*16)+',65%,42%)';x.beginPath();x.arc(sx,sy,z.sz,0,6.283);x.fill();
+    x.fillStyle='#fff';x.fillRect(sx-5,sy-3,3,3);x.fillRect(sx+2,sy-3,3,3);
+    x.fillStyle='#000a';x.fillRect(sx-z.sz,sy-z.sz-9,z.sz*2,4);
+    x.fillStyle='#e33';x.fillRect(sx-z.sz,sy-z.sz-9,z.sz*2*z.hp/z.mh,4);
+    x.fillStyle='#fff';x.font='11px sans-serif';x.textAlign='center';
+    x.fillText(NAMES[z.lv-1]+' ур.'+z.lv,sx,sy-z.sz-13);
+  }
+  x.fillStyle='#3a8be0';x.beginPath();x.arc(W/2,H/2,14,0,6.283);x.fill();
+  x.fillStyle='#fc9';x.beginPath();x.arc(W/2,H/2-2,7,0,6.283);x.fill();
+  x.font='bold 14px sans-serif';x.textAlign='center';
+  for(const t of tx){x.fillStyle=t.col;x.fillText(t.s,t.x+ox,t.y+oy)}
   if(joy.on){
-    x.strokeStyle='rgba(255,255,255,.4)';x.lineWidth=3;
-    x.beginPath();x.arc(joy.sx,joy.sy,60,0,6.283);x.stroke();
-    x.fillStyle='rgba(255,255,255,.4)';
-    x.beginPath();x.arc(joy.sx+joy.dx*60,joy.sy+joy.dy*60,24,0,6.283);x.fill();
+    x.strokeStyle='rgba(255,255,255,.4)';x.lineWidth=3;x.beginPath();x.arc(joy.sx,joy.sy,60,0,6.283);x.stroke();
+    x.fillStyle='rgba(255,255,255,.4)';x.beginPath();x.arc(joy.sx+joy.dx*60,joy.sy+joy.dy*60,24,0,6.283);x.fill();
   }
-  // интерфейс
-  x.fillStyle='#000a';x.fillRect(12,12,160,16);
-  x.fillStyle='#d33';x.fillRect(12,12,160*Math.max(0,p.hp)/100,16);
-  x.fillStyle='#fff';x.font='bold 18px sans-serif';x.textAlign='left';
-  x.fillText('Убито: '+score,12,52);
-  if(!joy.on&&!over&&t<300){x.textAlign='center';x.fillText('Води пальцем по экрану — персонаж идёт и стреляет сам',W/2,H-40)}
-  if(over){
-    x.fillStyle='#000b';x.fillRect(0,0,W,H);
-    x.fillStyle='#fff';x.textAlign='center';
-    x.font='bold 36px sans-serif';x.fillText('Тебя съели!',W/2,H/2-20);
-    x.font='22px sans-serif';x.fillText('Убито зомби: '+score,W/2,H/2+16);
-    x.fillText('Нажми, чтобы начать заново',W/2,H/2+52);
-  }
+  x.fillStyle='#000a';x.fillRect(10,10,170,14);x.fillRect(10,28,170,8);
+  x.fillStyle='#d33';x.fillRect(10,10,170*Math.max(0,P.hp)/MX(),14);
+  x.fillStyle='#4af';x.fillRect(10,28,170*P.xp/(P.lv*40),8);
+  x.fillStyle='#fff';x.font='bold 15px sans-serif';x.textAlign='left';
+  x.fillText('Ур.'+P.lv+'  HP '+Math.ceil(P.hp)+'/'+MX(),10,56);
+  x.font='13px sans-serif';
+  x.fillText('Дерево '+P.inv.wood+'  Камень '+P.inv.stone+'  Железо '+P.inv.iron+'  Кожа '+P.inv.leather,10,76);
+  if(msgT>0){x.textAlign='center';x.font='bold 20px sans-serif';x.fillStyle='#ff0';x.fillText(msg,W/2,H/2-60)}
+  if(tick<400){x.textAlign='center';x.font='14px sans-serif';x.fillStyle='#fff';x.fillText('Води пальцем — идёшь. УДАР бьёт монстров и добывает ресурсы',W/2,H-20)}
 }
-function loop(){update();draw();requestAnimationFrame(loop)}
+function loop(){if(M.style.display!=='block')update();draw();requestAnimationFrame(loop)}
 loop();
 </script></body></html>
